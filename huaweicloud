@@ -1,0 +1,215 @@
+# Create a VPC with two availability zones
+resource "huaweicloudstack_vpc_v1" "vpc" {
+  name       = "my-vpc"
+  cidr       = "10.0.0.0/16"
+  region     = "RegionOne"
+  az_num     = 2
+}
+
+# Create two public subnets in different availability zones
+resource "huaweicloudstack_vpc_subnet_v1" "public_subnet_1" {
+  name       = "my-public-subnet-1"
+  cidr       = "10.0.1.0/24"
+  vpc_id     = huaweicloudstack_vpc_v1.vpc.id
+  region     = huaweicloudstack_vpc_v1.vpc.region
+  az         = "az1"
+}
+
+resource "huaweicloudstack_vpc_subnet_v1" "public_subnet_2" {
+  name       = "my-public-subnet-2"
+  cidr       = "10.0.2.0/24"
+  vpc_id     = huaweicloudstack_vpc_v1.vpc.id
+  region     = huaweicloudstack_vpc_v1.vpc.region
+  az         = "az2"
+}
+
+# Create two private subnets in different availability zones
+resource "huaweicloudstack_vpc_subnet_v1" "private_subnet_1" {
+  name       = "my-private-subnet-1"
+  cidr       = "10.0.3.0/24"
+  vpc_id     = huaweicloudstack_vpc_v1.vpc.id
+  region     = huaweicloudstack_vpc_v1.vpc.region
+  az         = "az1"
+}
+
+resource "huaweicloudstack_vpc_subnet_v1" "private_subnet_2" {
+  name       = "my-private-subnet-2"
+  cidr       = "10.0.4.0/24"
+  vpc_id     = huaweicloudstack_vpc_v1.vpc.id
+  region     = huaweicloudstack_vpc_v1.vpc.region
+  az         = "az2"
+}
+
+# Create an Internet Gateway for the VPC
+resource "huaweicloudstack_vpc_internet_gateway_v1" "igw" {
+  name        = "my-igw"
+  vpc_id      = huaweicloudstack_vpc_v1.vpc.id
+}
+
+# Create a NAT instance in one of the public subnets
+resource "huaweicloudstack_ecs_instance_v1" "nat_instance" {
+  name              = "my-nat-instance"
+  image_id          = "centos7.8_64"
+  flavor_id         = "ecs.n2.large"
+  vpc_id            = huaweicloudstack_vpc_v1.vpc.id
+  subnet_id         = huaweicloudstack_vpc_subnet_v1.public_subnet_1.id
+  security_group_id = huaweicloudstack_vpc_security_group_v1.sg.id
+  availability_zone = huaweicloudstack_vpc_subnet_v1.public_subnet_1.az
+  password          = "password"
+
+  # Configure the NAT instance as a Bastion host
+  user_data         = <<EOF
+    #!/bin/bash
+    yum update -y
+    yum install -y openssh-server
+    systemctl enable sshd
+    systemctl start sshd
+  EOF
+}
+
+# Create a security group for the NAT instance
+resource "huaweicloudstack_vpc_security_group_v1" "sg" {
+  name        = "my-sg"
+  vpc_id      = huaweicloudstack_vpc_v1.vpc.id
+  description = "Security group for NAT instance"
+
+  # Allow incoming SSH connections
+  security_group_rule {
+    type         = "ingress"
+    protocol     = "tcp"
+    port_range   = 22
+    remote_ip    = "0.0.0.0/0"
+  }
+}
+
+# Create a public route table for the public subnets
+resource "huaweicloudstack_vpc_route_table_v1" "public_rt" {
+  name        = "my-public-rt"
+  vpc_id      = huaweicloudstack_vpc_v1.vpc.id
+
+  # Add a default route to the Internet Gateway
+  route {
+    destination_cidr_block = "0.0.0.0/0"
+    nexthop_type           = "IGATEWAY"
+    nexthop_id             = huaweicloudstack_vpc_internet_gateway_v1.igw.id
+  }
+}
+
+# Associate the public subnets with the public route table
+resource "huaweicloudstack_vpc_route_table_association_v1" "public_rta_1"
+  subnet_id      = huaweicloudstack_vpc_subnet_v1.public_subnet_1.id
+  route_table_id = huaweicloudstack_vpc_route_table_v1.public_rt.id
+}
+
+resource "huaweicloudstack_vpc_route_table_association_v1" "public_rta_2" {
+  subnet_id      = huaweicloudstack_vpc_subnet_v1.public_subnet_2.id
+  route_table_id = huaweicloudstack_vpc_route_table_v1.public_rt.id
+}
+
+# Create a private route table for the private subnets
+resource "huaweicloudstack_vpc_route_table_v1" "private_rt" {
+  name        = "my-private-rt"
+  vpc_id      = huaweicloudstack_vpc_v1.vpc.id
+
+  # Add a route to the NAT instance for Internet access
+  route {
+    destination_cidr_block = "0.0.0.0/0"
+    nexthop_type           = "INSTANCE"
+    nexthop_id             = huaweicloud
+}
+
+# Associate the private subnets with the private route table
+resource "huaweicloudstack_vpc_route_table_association_v1" "private_rta_1" {
+  subnet_id      = huaweicloudstack_vpc_subnet_v1.private_subnet_1.id
+  route_table_id = huaweicloudstack_vpc_route_table_v1.private_rt.id
+}
+
+resource "huaweicloudstack_vpc_route_table_association_v1" "private_rta_2" {
+  subnet_id      = huaweicloudstack_vpc_subnet_v1.private_subnet_2.id
+  route_table_id = huaweicloudstack_vpc_route_table_v1.private_rt.id
+}
+
+# Create an Elastic Load Balancer
+resource "huaweicloudstack_elb_loadbalancer_v1" "alb" {
+  name               = "my-alb"
+  vpc_id             = huaweicloudstack_vpc_v1.vpc.id
+  type               = "alb"
+  vip_subnet_id      = huaweicloudstack_vpc_subnet_v1.public_subnet_1.id
+  security_group_id  = huaweicloudstack_vpc_security_group_v1.alb_sg.id
+  listener {
+    protocol          = "http"
+    port              = 80
+    backend_protocol  = "http"
+    backend_port      = 80
+  }
+  listener {
+    protocol          = "https"
+    port              = 443
+    backend_protocol  = "http"
+    backend_port      = 80
+    certificate_id    = huaweicloudstack_cert_v1.cert.id
+  }
+ 
+# Create an Auto Scaling Group
+resource "huaweicloudstack_as_group_v1" "asg" {
+  name                 = "my-asg"
+  launch_template {
+    id                  = huaweicloudstack_compute_launch_template_v1.launch_template.id
+    version             = "$Latest"
+  }
+  vpc_id               = huaweicloudstack_vpc_v1.vpc.id
+  desired_capacity     = 2
+  min_size             = 2
+  max_size             = 4
+  health_check_type    = "ELB"
+  health_check_grace_period = 90
+  load_balancer_ids    = [huaweicloudstack_elb_loadbalancer_v1.alb.id]
+  target_tracking_policy {
+    predefined_metric  = "ASGAverageCPUUtilization"
+    target_value       = 70
+  }
+  notification_configurations {
+    topic_arn          = huaweicloudstack_sns_topic_v1.notification_topic.arn
+    notification_type  = ["instance-launch", "instance-terminate", "instance-failure"]
+  }
+  tags {
+    key                = "Capstone Project"
+    value              = "true"
+  }
+}
+
+# Create a security group for the ALB
+resource "huaweicloudstack_vpc_security_group_v1" "alb_sg" {
+  name        = "my-alb-sg"
+  vpc_id      = huaweicloudstack_vpc_v1.vpc.id
+  rule {
+    direction   = "ingress"
+    protocol    = "tcp"
+    port_range  = 80
+    remote_ip_prefix = "0.0.0.0/0"
+  }
+  rule {
+    direction   = "ingress"
+    protocol    = "tcp"
+    port_range  = 443
+    remote_ip_prefix = "0.0.0.0/0"
+  }
+}
+
+# Create a launch template for the ASG instances
+resource "huaweicloudstack_compute_launch_template_v1" "launch_template" {
+  name            = "my-launch-template"
+  image_id        = "ubuntu-1804-bionic-2022-01-29"
+  instance_type   = "ecs.t2.micro"
+  security_group_id = huaweicloudstack_vpc_security_group_v1.asg_sg.id
+  user_data       = <<EOF
+                    #!/bin/bash
+                    apt-get update
+                    apt-get install -y apache2
+                    service apache2 start
+                    EOF
+  network_interface {
+    subnet_id = huaweicloudstack_vpc_subnet_v
+
+
+
