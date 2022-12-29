@@ -143,9 +143,9 @@ LOGIN_REDIRECT_URL = "blog:list"
 LOGIN_URL = "login"
 
 
-OBS_BUCKET_NAME = 'project-object-bucket' # please enter your obs bucket name
+OBS_BUCKET_NAME = 'project-bucket-infotechia' # please enter your obs bucket name
 OBS_REGION_NAME = 'ap-southeast-1' # please enter your obs region code
-OBS_CUSTOM_DOMAIN = 'project-object-bucket.obs.ap-southeast-1.myhuaweicloud.com' % (OBS_BUCKET_NAME, OBS_REGION_NAME)
+OBS_CUSTOM_DOMAIN = 'project-bucket-infotechia.obs.ap-southeast-1.myhuaweicloud.com' % (OBS_BUCKET_NAME, OBS_REGION_NAME)
 OBS_DEFAULT_ACL = 'public-read'
 
 OBS_LOCATION = 'static'
@@ -154,5 +154,5 @@ STATICFILES_DIRS = [
 ]
 
 STATIC_URL = 'https://%s/%s/' % (OBS_CUSTOM_DOMAIN, OBS_LOCATION)
-STATICFILES_STORAGE = 'huaweicloud.storage.HWBS3Storage'
-DEFAULT_FILE_STORAGE = 'huaweicloud.storage.HWBS3Storage'
+STATICFILES_STORAGE = 'huaweicloud.storage.HWBOBSStorage'
+DEFAULT_FILE_STORAGE = 'huaweicloud.storage.HWBOBSStorage'
